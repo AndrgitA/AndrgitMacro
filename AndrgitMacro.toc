@@ -2,7 +2,7 @@
 ## Title: Andrgit Macro Commands
 ## Notes: Create short usable macroses with multi conditions
 ## Author: |cffbe5effAndrgit
-## Version: 1.0
+## Version: 1.0.1
 
 AndrgitMacro.lua
 AndrgitMacro.xml
