@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: Andrgit Macro Commands
+## Author: |cffbe5effAndrgit
+## Version: 1.0
+
+AndrgitMacro.lua
+AndrgitMacro.xml
