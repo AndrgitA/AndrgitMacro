@@ -22,8 +22,15 @@
 
 - `[nobuff:BUFFNAME]` - проверка, что на игроке нет указанного баффа **BUFFNAME**
 - `[buff:BUFFNAME]` - проверка, что на игроке есть указанный бафф **BUFFNAME**
-- `[usableaction:slotID]` - проверка, что возможно нажать на **ActionBarSlotID**
-- `[notusableaction:slotID]` - проверка, что нельзя нажать на **ActionBarSlotID**
+- `[nodebuff:DEBUFFNAME]` - проверка, что на игроке нет указанного дебаффа **DEBUFFNAME**
+- `[debuff:DEBUFFNAME]` - проверка, что на игроке есть указанный дебафф **DEBUFFNAME**
+- `[useactionslot:slotID]` - проверка, что возможно нажать на **ActionBarSlotID**
+- `[unuseactionslot:slotID]` - проверка, что нельзя нажать на **ActionBarSlotID**
+- `[useactionspell:SPELLNAME]` - проверка, что возможно нажать на actionbar для **SPELL**
+- `[unuseactionspell:SPELLNAME]` - проверка, что нельзя нажать на actionbar для **SPELL**
+- `[useactionitem:ITEMNAME]` - проверка, что возможно нажать на actionbar для **ITEM**
+- `[unuseactionitem:ITEMNAME]` - проверка, что нельзя нажать на actionbar для **ITEM**
+
 - `[cd:SPELLNAME]` - проверка, что способность **SPELLNAME** на кулдауне
 - `[nocd:SPELLNAME]` - проверка, что способность **SPELLNAME** не на кулдауне
 

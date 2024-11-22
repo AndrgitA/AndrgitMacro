@@ -18,12 +18,17 @@ local ANDRGITMACRO_OPTION = {
 	["DEADORGHOST"] = "deadorghost",
 	["NOBUFF"] = "nobuff",
 	["BUFF"] = "buff",
-	-- ["NODEBUFF"] = "nodebuff",
-	-- ["DEBUFF"] = "debuff",
-	["USABLEACTION"] = "usableaction",
-	["NOTUSABLEACTION"] = "notusableaction",
+	["NODEBUFF"] = "nodebuff",
+	["DEBUFF"] = "debuff",
+	
 	["CD"] = "cd",
 	["NOCD"] = "nocd",
+	["USEACTIONSLOT"] = "useactionslot",
+	["UNUSEACTIONSLOT"] = "unuseactionslot",
+	["USEACTIONSPELL"] = "useactionspell",
+	["UNUSEACTIONSPELL"] = "unuseactionspell",
+	["USEACTIONITEM"] = "useactionitem",
+	["UNUSEACTIONITEM"] = "unuseactionitem",
 };
 
 local MEMOIZE_CACHE_DATA = {};
@@ -32,15 +37,19 @@ local MAX_COUNT_BUFFS = 64;
 AndrgitMacro = CreateFrame("Frame", nil, UIParent);
 AndrgitMacro.needUpdate = {
 	spellBookData = true,
+	actionBarData = true,
 };
 AndrgitMacro.cacheData = {
 	spellBookData = nil,
+	actionBarData = nil,
 };
 
 AndrgitMacro:RegisterEvent("ADDON_LOADED");
 AndrgitMacro:RegisterEvent("CHARACTER_POINTS_CHANGED");
 AndrgitMacro:RegisterEvent("SPELLS_CHANGED");
 AndrgitMacro:RegisterEvent("LEARNED_SPELL_IN_TAB");
+AndrgitMacro:RegisterEvent("ACTIONBAR_SHOWGRID");
+AndrgitMacro:RegisterEvent("ACTIONBAR_HIDEGRID");
 AndrgitMacro:SetScript("OnEvent", function()
 	if (
 		event == "CHARACTER_POINTS_CHANGED" or
@@ -49,11 +58,24 @@ AndrgitMacro:SetScript("OnEvent", function()
 	) then
 		this.needUpdate.spellBookData = true;
 	end
+	
+	if (
+		event == "ACTIONBAR_SHOWGRID" or
+		event == "ACTIONBAR_HIDEGRID"
+	) then
+		this.needUpdate.actionBarData = true;
+	end
+
+	
 end)
 
-local ANDRGITMACRO_Tooltip = CreateFrame("GameTooltip", "AndrgitMacroTooltip", nil, "GameTooltipTemplate");
-local ANDRGITMACRO_TooltipPrefix = "AndrgitMacroTooltip";
+local ANDRGITMACRO_TooltipName = "AndrgitMacroTooltip";
+local ANDRGITMACRO_Tooltip = CreateFrame("GameTooltip", ANDRGITMACRO_TooltipName, nil, "GameTooltipTemplate");
 ANDRGITMACRO_Tooltip:SetOwner(WorldFrame, "ANCHOR_NONE");
+
+local ANDRGITMACRO_TooltipAuraName = "AndrgitMacroTooltipAura";
+local ANDRGITMACRO_TooltipAura = CreateFrame("GameTooltip", ANDRGITMACRO_TooltipAuraName, nil, "GameTooltipTemplate");
+ANDRGITMACRO_TooltipAura:SetOwner(WorldFrame, "ANCHOR_NONE");
 
 ---Локальная функция принта
 ---@param ... unknown
@@ -85,12 +107,14 @@ local error, assert = error, assert
 ---@return number
 local function tablelength(T)
 	if not T then
-		return nil
+		return nil;
 	end
 	
-  local count = 0
-  for _ in pairs(T) do count = count + 1 end
-  return count
+  local count = 0;
+  for _ in pairs(T) do 
+		count = count + 1;
+	end
+	return count;
 end
 
 ---Возвращает значение из кортежа данных по позиции n
@@ -158,8 +182,14 @@ ANDRGITMACRO_ShowAddonHelpInfo = function()
 
 	DEFAULT_CHAT_FRAME:AddMessage(" [nobuff:BUFFNAME]"..textColor.."- проверка, что на игроке нет указанного баффа BUFFNAME");
 	DEFAULT_CHAT_FRAME:AddMessage(" [buff:BUFFNAME]"..textColor.."- проверка, что на игроке есть указанный бафф BUFFNAME");
-	DEFAULT_CHAT_FRAME:AddMessage(" [usableaction:slotID]"..textColor.."- проверка, что возможно нажать на actionbar slotID");
-	DEFAULT_CHAT_FRAME:AddMessage(" [notusableaction:slotID]"..textColor.."- проверка, что нельзя нажать на actionbar slotID");
+	DEFAULT_CHAT_FRAME:AddMessage(" [nodebuff:DEBUFFNAME]"..textColor.."- проверка, что на игроке нет указанного дебаффа DEBUFFNAME");
+	DEFAULT_CHAT_FRAME:AddMessage(" [debuff:DEBUFFNAME]"..textColor.."- проверка, что на игроке есть указанный дебафф DEBUFFNAME");
+	DEFAULT_CHAT_FRAME:AddMessage(" [useactionslot:slotID]"..textColor.."- проверка, что возможно нажать на actionbar slotID");
+	DEFAULT_CHAT_FRAME:AddMessage(" [unuseactionslot:slotID]"..textColor.."- проверка, что нельзя нажать на actionbar slotID");
+	DEFAULT_CHAT_FRAME:AddMessage(" [useactionspell:SPELLNAME]"..textColor.."- проверка, что возможно нажать на actionbar для SPELL");
+	DEFAULT_CHAT_FRAME:AddMessage(" [unuseactionspell:SPELLNAME]"..textColor.."- проверка, что нельзя нажать на actionbar для SPELL");
+	DEFAULT_CHAT_FRAME:AddMessage(" [useactionitem:ITEMNAME]"..textColor.."- проверка, что возможно нажать на actionbar для ITEM");
+	DEFAULT_CHAT_FRAME:AddMessage(" [unuseactionitem:ITEMNAME]"..textColor.."- проверка, что нельзя нажать на actionbar для ITEM");
 	DEFAULT_CHAT_FRAME:AddMessage(" [cd:SPELLNAME]"..textColor.."- проверка, что способность SPELLNAME на кулдауне");
 	DEFAULT_CHAT_FRAME:AddMessage(" [nocd:SPELLNAME]"..textColor.."- проверка, что способность SPELLNAME не на кулдауне");
 
@@ -196,6 +226,82 @@ ANDRGITMACRO_ParseMacro = function(str)
 	end
 
 	return options, strAction
+end
+
+
+local MACRO_RULES_METHODS = {
+	[ANDRGITMACRO_OPTION.HELP] = function(unit)
+		return UnitCanAssist("player", unit);
+	end,
+	[ANDRGITMACRO_OPTION.NOHARM] = function(unit)
+		return UnitIsFriend("player", unit);
+	end,
+	[ANDRGITMACRO_OPTION.HARM] = function(unit)
+		return not UnitIsFriend("player", unit);
+	end,
+	[ANDRGITMACRO_OPTION.DEAD] = function(unit)
+		return UnitIsDead(unit);
+	end,
+	[ANDRGITMACRO_OPTION.DEADORGHOST] = function(unit)
+		return UnitIsDeadOrGhost(unit);
+	end,
+	[ANDRGITMACRO_OPTION.BUFF] = function(unit, name)
+		return ANDRGITMACRO_HasBuff(name);
+	end,
+	[ANDRGITMACRO_OPTION.NOBUFF] = function(unit, name)
+		return not ANDRGITMACRO_HasBuff(name);
+	end,
+	[ANDRGITMACRO_OPTION.DEBUFF] = function(unit, name)
+		return ANDRGITMACRO_HasDeBuff(name);
+	end,
+	[ANDRGITMACRO_OPTION.NODEBUFF] = function(unit, name)
+		return not ANDRGITMACRO_HasDeBuff(name);
+	end,
+	[ANDRGITMACRO_OPTION.CD] = function(unit, name)
+		local getSpellIndex = ANDRGITMACRO_GetSpellIndex(name);
+		local hasCD = getSpellIndex and GetSpellCooldown(getSpellIndex, BOOKTYPE_SPELL);
+		return hasCD > 0;
+	end,
+	[ANDRGITMACRO_OPTION.NOCD] = function(unit, name)
+		local getSpellIndex = ANDRGITMACRO_GetSpellIndex(name);
+		local hasCD = getSpellIndex and GetSpellCooldown(getSpellIndex, BOOKTYPE_SPELL);
+		return hasCD == 0;
+	end,
+	[ANDRGITMACRO_OPTION.USEACTIONSLOT] = function(unit, slot)
+		return IsUsableAction(slot);
+	end,
+	[ANDRGITMACRO_OPTION.UNUSEACTIONSLOT] = function(unit, slot)
+		return not IsUsableAction(slot);
+	end,
+	[ANDRGITMACRO_OPTION.USEACTIONSPELL] = function(unit, name)
+		local spell = ANDRGITMACRO_GetActionBarData().spells[name];
+		return spell and IsUsableAction(spell[1].actionBarID);
+	end,
+	[ANDRGITMACRO_OPTION.UNUSEACTIONSPELL] = function(unit, name)
+		local spell = ANDRGITMACRO_GetActionBarData().spells[name];
+		return spell and not IsUsableAction(spell[1].actionBarID);
+	end,
+	[ANDRGITMACRO_OPTION.USEACTIONITEM] = function(unit, name)
+		local item = ANDRGITMACRO_GetActionBarData().items[name];
+		return item and IsUsableAction(item[1].actionBarID);
+	end,
+	[ANDRGITMACRO_OPTION.UNUSEACTIONITEM] = function(unit, name)
+		local item = ANDRGITMACRO_GetActionBarData().items[name];
+		return item and not IsUsableAction(item[1].actionBarID);
+	end,
+};
+
+local isAcceptMacroRules = function(options, unit, action)
+	for i = 2, table.getn(options) do
+		local splitOptions = splitString(options[i], ':');
+		local option, optionValue = splitOptions[1], splitOptions[2];
+
+		if (not (MACRO_RULES_METHODS[option] and MACRO_RULES_METHODS[option](unit, optionValue))) then
+			return false;
+		end
+	end
+
+	return true;
 end
 
 ---Проверка данных парсера для активации марокса
@@ -255,77 +361,7 @@ local checkMacroActive = function(options, action, func)
 		return ;
 	end
 	
-	local callEnabled = true
-	for i = 2, table.getn(options) do
-		local splitOptions = splitString(options[i], ':');
-		local option, optionValue = splitOptions[1], splitOptions[2];
-		
-		if (option == ANDRGITMACRO_OPTION.HELP) then
-			if not UnitCanAssist("player", unit) then
-				callEnabled = false
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.HARM) then 
-			if UnitIsFriend("player", unit) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.NOHARM) then
-			if not UnitIsFriend("player", unit) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.DEAD) then
-			if not UnitIsDead(unit) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.DEADORGHOST) then
-			if not UnitIsDeadOrGhost(unit) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.NOBUFF) then
-			if (ANDRGITMACRO_HasBuff(optionValue)) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.BUFF) then
-			if (not ANDRGITMACRO_HasBuff(optionValue)) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.USABLEACTION) then
-			if (not IsUsableAction(optionValue)) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.NOTUSABLEACTION) then
-			if (IsUsableAction(optionValue)) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.CD) then
-			local getSpellIndex = ANDRGITMACRO_GetSpellIndex(optionValue);
-			local hasCD = getSpellIndex and GetSpellCooldown(getSpellIndex, BOOKTYPE_SPELL);
-			if (not getSpellIndex or hasCD == 0) then
-				callEnabled = false;
-				break;
-			end
-		elseif (option == ANDRGITMACRO_OPTION.NOCD) then
-			local getSpellIndex = ANDRGITMACRO_GetSpellIndex(optionValue);
-			local hasCD = getSpellIndex and GetSpellCooldown(getSpellIndex, BOOKTYPE_SPELL);
-			if (not getSpellIndex or hasCD > 0) then
-				callEnabled = false;
-				break;
-			end
-		else
-			callEnabled = false
-			break;
-		end
-	end
-
-	if callEnabled then
+	if (isAcceptMacroRules(options, unit, action)) then
 		func(function() callAction(unit, action) end)
 	end
 end
@@ -376,22 +412,32 @@ function ANDRGITMACRO_UseItemByName(name)
   end
 end
 
-function ANDRGITMACRO_HasBuff(aura)
+function ANDRGITMACRO_HasAura(aura, type)
+	local auraType = type or "HELPFUL";
 	for i=0, MAX_COUNT_BUFFS - 1 do
-		local index = GetPlayerBuff(i, 'HELPFUL');
+		local index = GetPlayerBuff(i, auraType);
 		if (index < 0) then
 			break;
 		end
 		
-		ANDRGITMACRO_Tooltip:SetPlayerBuff(index);
-				
-		local nameAura = getglobal("AndrgitMacroTooltipTextLeft1"):GetText();
+		ANDRGITMACRO_TooltipAura:ClearLines();
+		ANDRGITMACRO_TooltipAura:SetPlayerBuff(index, auraType);
+		
+		local nameAura = getglobal(ANDRGITMACRO_TooltipAuraName.."TextLeft1"):GetText();
 		if (nameAura == aura) then
 			return true;
 		end
 	end
 
 	return false;
+end
+
+function ANDRGITMACRO_HasBuff(aura)
+	return ANDRGITMACRO_HasAura(aura, "HELPFUL");
+end
+
+function ANDRGITMACRO_HasDeBuff(aura)
+	return ANDRGITMACRO_HasAura(aura, "HARMFUL");
 end
 
 function ANDRGITMACRO_CancelAuras(auras)
@@ -408,10 +454,11 @@ function ANDRGITMACRO_CancelAuras(auras)
 		if (index < 0) then
 			break;
 		end
-		
-		ANDRGITMACRO_Tooltip:SetPlayerBuff(index);
+
+		ANDRGITMACRO_TooltipAura:ClearLines();
+		ANDRGITMACRO_TooltipAura:SetPlayerBuff(index);
 				
-		local nameAura = getglobal("AndrgitMacroTooltipTextLeft1"):GetText();
+		local nameAura = getglobal(ANDRGITMACRO_TooltipAuraName.."TextLeft1"):GetText();
 		if (nameAura and tbAuras[nameAura]) then
 			findedAuras = findedAuras + 1;
 			CancelPlayerBuff(index);
@@ -470,21 +517,31 @@ function ANDRGITMACRO_GetSpellsBookData()
 		for spell=1, numSpells do
 			local SpellID = spell + offset;
 
-			ANDRGITMACRO_Tooltip:SetSpell(SpellID, BOOKTYPE_SPELL)
-			local MAX_LINES = ANDRGITMACRO_Tooltip:NumLines()
-			local spellName = getglobal(ANDRGITMACRO_TooltipPrefix.."TextLeft1"):GetText();
+			ANDRGITMACRO_Tooltip:ClearLines();
+			ANDRGITMACRO_Tooltip:SetSpell(SpellID, BOOKTYPE_SPELL);
+
+			local MAX_LINES = ANDRGITMACRO_Tooltip:NumLines();
+			local spellName = getglobal(ANDRGITMACRO_TooltipName.."TextLeft1"):GetText();
 			if (spellName) then
-				data[spellName] = {
+				if (not data[spellName]) then
+					data[spellName] = {};
+				end
+				
+				local spellData = {
 					spellID = SpellID,
 					["tab"] = name,
+					texture = texture,
 					["tooltipData"] = {},
+					rank = table.getn(data[spellName]) + 1,
 				};
 				for line=2, MAX_LINES do
-					local left = getglobal(ANDRGITMACRO_TooltipPrefix .. "TextLeft" .. line)
+					local left = getglobal(ANDRGITMACRO_TooltipName .. "TextLeft" .. line)
 					if left:GetText() then
-						table.insert(data[spellName].tooltipData, left:GetText());
+						table.insert(spellData.tooltipData, left:GetText());
 					end
 				end
+				
+				table.insert(data[spellName], spellData);
 			end
 		end
 	end
@@ -494,12 +551,137 @@ function ANDRGITMACRO_GetSpellsBookData()
 	return data;
 end
 
+local lockedActionBarData = false;
+function ANDRGITMACRO_GetActionBarData(skipLocked)
+	if (
+		not AndrgitMacro.needUpdate.actionBarData or
+		(lockedActionBarData and skipLocked ~= true)
+	) then
+		return AndrgitMacro.cacheData.actionBarData;
+	end
+
+	lockedActionBarData = true;
+
+	local data = {
+		spells = {},
+		items = {},
+		macros = {},
+		actionBars = {},
+	};
+	local MAX_ACTIONS = 280;
+	local macroName, isASpell, spellName, rank, itemName, texture;
+	local spellBookData = ANDRGITMACRO_GetSpellsBookData();
+	
+	for index=1, MAX_ACTIONS do
+		if (HasAction(index)) then
+			macroName, isASpell, spellName, rank, itemName = nil, nil, nil, nil, nil;
+			local actionData = {
+				spell = nil,
+				macro = nil,
+				item = nil,
+				texture = nil,
+				tooltipData = nil,
+			}
+			
+			texture = GetActionTexture(index);
+			if (texture) then
+				actionData.texture = texture;
+			end
+
+			macroName = GetActionText(index);
+			if (macroName) then
+				actionData.macro = macroName;
+			else
+				ANDRGITMACRO_Tooltip:ClearLines();
+				ANDRGITMACRO_Tooltip:SetAction(index);
+				
+				local left, right = getglobal(ANDRGITMACRO_TooltipName.."TextLeft1"), getglobal(ANDRGITMACRO_TooltipName.."TextRight1");
+				if (left and spellBookData[left:GetText()]) then
+					isASpell = true;
+				end
+				-- PickupAction(index);
+				-- isASpell = CursorHasSpell();
+				-- PlaceAction(index);
+
+				if (isASpell) then
+					spellName = nil;
+					rank = nil;
+					if (left:IsShown()) then
+						spellName = left:GetText();
+					end
+					if (right:IsShown()) then
+						rank = right:GetText();
+					end
+					actionData.spell = {
+						name = spellName,
+						rank = rank,
+					};
+				else
+					itemName = nil;
+					if (left:IsShown()) then
+						itemName = left:GetText();
+					end
+					actionData.item = itemName;
+				end
+
+				local MAX_LINES = ANDRGITMACRO_Tooltip:NumLines();
+
+				if (MAX_LINES > 0) then
+					actionData.tooltipData = {};
+					for line=1, MAX_LINES do
+						local left = getglobal(ANDRGITMACRO_TooltipName .. "TextLeft" .. line)
+						if left:GetText() then
+							table.insert(actionData.tooltipData, left:GetText());
+						end
+					end
+				end
+			end
+
+			if (spellName) then
+				if (not data.spells[spellName]) then
+					data.spells[spellName] = {};
+				end
+				table.insert(data.spells[spellName], {
+					actionBarID = index,
+					texture = texture,
+					rank = rank,
+					tooltipData = actionData.tooltipData;
+				});
+			elseif (macroName) then
+				if (not data.macros[macroName]) then
+					data.macros[macroName] = {};
+				end
+				table.insert(data.macros[macroName], {
+					actionBarID = index,
+					texture = texture,
+					tooltipData = actionData.tooltipData;
+				});
+			elseif (itemName) then
+				if (not data.items[itemName]) then
+					data.items[itemName] = {};
+				end
+				table.insert(data.items[itemName], {
+					actionBarID = index,
+					texture = texture,
+					tooltipData = actionData.tooltipData;
+				});
+			end
+			
+			data.actionBars[index] = actionData;
+		end
+	end
+
+	lockedActionBarData = false;
+	AndrgitMacro.cacheData.actionBarData = data;
+	AndrgitMacro.needUpdate.actionBarData = false;
+	return data;
+end
 
 function ANDRGITMACRO_GetSpellIndex(name)
 	local spells = ANDRGITMACRO_GetSpellsBookData();
 	for spell, data in pairs(spells) do
 		if (spell == name) then
-			return data.spellID;
+			return data[1].spellID;
 		end
 	end
 	return nil;
